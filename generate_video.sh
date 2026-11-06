@@ -7,6 +7,9 @@ OUTPUT_DIR="./output"
 export ASSETS_DIR="./assets"
 mkdir -p "$OUTPUT_DIR" "$ASSETS_DIR" "$TMP_DIR/audio"
 
+# Add your   Webhook URL here (Leave empty to disable)
+export WEBHOOK_URL="https://connect.pabbly.com/webhook-listener/webhook/IjU3NjIwNTZlMDYzNDA0MzU1MjZmNTUzMiI_3D_pc/IjU3NjcwNTZiMDYzNDA0MzE1MjY1NTUzNjUxM2Ii_pc"
+
 export WALLPAPER_FOLDER_ID="1PHFXixQ8F1CnTZbnBkz_hfa8-OqAKup8"
 export ARCHIVE_FOLDER_ID="190G9vBYRwQb4VqHGfmGExdjhH0phgA4t" 
 export AUDIO_FOLDER_ID="1IgGUF3cbHUU5YpG7s5QLKRBDQsuV81FU"
@@ -234,7 +237,7 @@ echo "✅ Video created: $OUT_FILE ($(du -h "$OUT_FILE" | cut -f1))"
 if [ -f "$OUT_FILE" ]; then
     echo "📤 Step 4: Pushing to GitHub Releases..."
     
-DESCRIPTION="🎧 Listen on Spotify:
+    export DESCRIPTION="🎧 Listen on Spotify:
 $SPOTIFY_PLAYLIST
 
 🎵 Listen on Apple Music:
@@ -251,11 +254,46 @@ https://www.fiverr.com/hitblazz/promote-your-ambient-music-tracks
 
 #aesthetic #snow #winter #moody #cinematic #vibes #nyc #snowing #nature"
 
-    TAG_NAME="video-$(date +%s)"
-    CLEAN_TITLE=$(echo "$SELECTED_TITLE" | tr '_' ' ')
+    export TAG_NAME="video-$(date +%s)"
+    export CLEAN_TITLE=$(echo "$SELECTED_TITLE" | tr '_' ' ')
     
     gh release create "$TAG_NAME" "$OUT_FILE" "$THUMBNAIL_FILE" --title "$CLEAN_TITLE" --notes "$DESCRIPTION"
     echo "✅ GitHub Release created successfully!"
+    
+    # --- WEBHOOK INTEGRATION ---
+    if [ -n "$WEBHOOK_URL" ]; then
+        echo "🌐 Sending webhook payload to Pabbly..."
+        
+        # Grab the repository URL to construct the direct download links
+        REPO_URL=$(gh repo view --json url -q .url)
+        export VIDEO_URL="$REPO_URL/releases/download/$TAG_NAME/$OUT_FILENAME"
+        export THUMBNAIL_URL="$REPO_URL/releases/download/$TAG_NAME/thumbnail.jpg"
+        
+        python3 - << 'EOF3'
+import os, json, urllib.request
+
+webhook_url = os.environ.get("WEBHOOK_URL")
+if webhook_url:
+    data = {
+        "title": os.environ.get("CLEAN_TITLE"),
+        "description": os.environ.get("DESCRIPTION"),
+        "video_url": os.environ.get("VIDEO_URL"),
+        "thumbnail_url": os.environ.get("THUMBNAIL_URL"),
+        "tag_name": os.environ.get("TAG_NAME")
+    }
+    
+    req = urllib.request.Request(webhook_url, method="POST")
+    req.add_header('Content-Type', 'application/json')
+    jsondata = json.dumps(data).encode('utf-8')
+    
+    try:
+        with urllib.request.urlopen(req, data=jsondata) as response:
+            print(f"✅ Webhook sent successfully! Status: {response.status}")
+    except Exception as e:
+        print(f"⚠️ Failed to send webhook: {e}")
+EOF3
+    fi
+    # ---------------------------
     
     # ---------------------------------------------------------
     # SMART CLEANUP: Keeps the latest 3 releases, deletes the rest
